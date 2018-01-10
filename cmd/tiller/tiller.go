@@ -39,6 +39,7 @@ import (
 
 	// Import to initialize client auth plugins.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/helm/pkg/kube"
 	"k8s.io/helm/pkg/proto/hapi/services"
 	"k8s.io/helm/pkg/storage"
@@ -84,6 +85,9 @@ var (
 	caCertFile           = flag.String("tls-ca-cert", tlsDefaultsFromEnv("tls-ca-cert"), "trust certificates signed by this CA")
 	maxHistory           = flag.Int("history-max", historyMaxFromEnv(), "maximum number of releases kept in release history, with 0 meaning no limit")
 	printVersion         = flag.Bool("version", false, "print the version number")
+	user                 = flag.String("user", "", "impersonation user")
+	groups               = flag.String("groups", "", "impersonation groups")
+	probe                = flag.String("probe", probeAddr, "probe address:port to listen")
 
 	// rootServer is the root gRPC server.
 	//
@@ -116,11 +120,14 @@ func main() {
 }
 
 func start() {
+	splitGroups := strings.Split(*groups, ",")
 
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("Tiller", healthpb.HealthCheckResponse_NOT_SERVING)
 
-	clientset, err := kube.New(nil).ClientSet()
+	impersonationConfig := tiller.NewImpersonationClientConfig(&clientcmd.ClientConfigLoadingRules{ExplicitPath: os.Getenv("KUBECONFIG")},
+		&clientcmd.ConfigOverrides{}, *user, splitGroups)
+	clientset, err := kube.New(impersonationConfig).ClientSet()
 	if err != nil {
 		logger.Fatalf("Cannot initialize Kubernetes connection: %s", err)
 	}
@@ -146,7 +153,7 @@ func start() {
 		env.Releases.MaxHistory = *maxHistory
 	}
 
-	kubeClient := kube.New(nil)
+	kubeClient := kube.New(impersonationConfig)
 	kubeClient.Log = newLogger("kube").Printf
 	env.KubeClient = kubeClient
 
@@ -184,7 +191,7 @@ func start() {
 
 	logger.Printf("Starting Tiller %s (tls=%t)", version.GetVersion(), *tlsEnable || *tlsVerify)
 	logger.Printf("GRPC listening on %s", *grpcAddr)
-	logger.Printf("Probes listening on %s", probeAddr)
+	logger.Printf("Probes listening on %s", *probe)
 	logger.Printf("Storage driver is %s", env.Releases.Name())
 	logger.Printf("Max history per release is %d", *maxHistory)
 
@@ -210,7 +217,7 @@ func start() {
 		goprom.Register(rootServer)
 		addPrometheusHandler(mux)
 
-		if err := http.ListenAndServe(probeAddr, mux); err != nil {
+		if err := http.ListenAndServe(*probe, mux); err != nil {
 			probeErrCh <- err
 		}
 	}()
