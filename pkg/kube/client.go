@@ -100,8 +100,9 @@ func (c *Client) Create(namespace string, reader io.Reader, timeout int64, shoul
 		return buildErr
 	}
 	for _, info := range infos {
-		if info.Namespace != namespace {
-			return fmt.Errorf("Resource's namespace %s doesn't match the current namespace %s", info.Namespace, namespace)
+		// if resource is created under a namespace we have to make sure the namespace matches
+		if info.Namespace != namespace && info.Namespace != "" {
+			return fmt.Errorf("resource's namespace %s doesn't match the current namespace %s", info.Namespace, namespace)
 		}
 	}
 	c.Log("creating %d resource(s)", len(infos))
