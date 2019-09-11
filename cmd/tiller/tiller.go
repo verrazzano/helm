@@ -36,6 +36,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/klog"
 
 	// Import to initialize client auth plugins.
@@ -126,11 +127,15 @@ func main() {
 }
 
 func start() {
-
 	healthSrv := health.NewServer()
 	healthSrv.SetServingStatus("Tiller", healthpb.HealthCheckResponse_NOT_SERVING)
 
-	clientset, err := kube.New(nil).KubernetesClientSet()
+	kubeconfig := os.Getenv("KUBECONFIG")
+
+	flagset := genericclioptions.NewConfigFlags(true)
+	flagset.KubeConfig = &kubeconfig
+
+	clientset, err := kube.New(flagset).KubernetesClientSet()
 	if err != nil {
 		logger.Fatalf("Cannot initialize Kubernetes connection: %s", err)
 	}
@@ -168,7 +173,7 @@ func start() {
 		env.Releases.MaxHistory = *maxHistory
 	}
 
-	kubeClient := kube.New(nil)
+	kubeClient := kube.New(flagset)
 	kubeClient.Log = newLogger("kube").Printf
 	env.KubeClient = kubeClient
 
@@ -218,22 +223,26 @@ func start() {
 
 	srvErrCh := make(chan error)
 	probeErrCh := make(chan error)
-	go func() {
+	done := make(chan struct{})
+	go func(done chan<- struct{}) {
 		svc := tiller.NewReleaseServer(env, clientset, *remoteReleaseModules)
 		svc.Log = newLogger("tiller").Printf
 		services.RegisterReleaseServiceServer(rootServer, svc)
+		done <- struct{}{}
 		if err := rootServer.Serve(lstn); err != nil {
 			srvErrCh <- err
 		}
-	}()
+	}(done)
 
-	go func() {
+	go func(done <-chan struct{}) {
 		if !*enableProbing {
 			return
 		}
 
 		mux := newProbesMux()
 
+		// wait for the first go routine to register services
+		<-done
 		// Register gRPC server to prometheus to initialized matrix
 		goprom.Register(rootServer)
 		addPrometheusHandler(mux)
@@ -241,7 +250,7 @@ func start() {
 		if err := http.ListenAndServe(*probeAddr, mux); err != nil {
 			probeErrCh <- err
 		}
-	}()
+	}(done)
 
 	healthSrv.SetServingStatus("Tiller", healthpb.HealthCheckResponse_SERVING)
 
