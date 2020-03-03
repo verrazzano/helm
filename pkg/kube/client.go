@@ -62,7 +62,10 @@ import (
 )
 
 // MissingGetHeader is added to Get's output when a resource is not found.
-const MissingGetHeader = "==> MISSING\nKIND\t\tNAME\n"
+const (
+	MissingGetHeader = "==> MISSING\nKIND\t\tNAME\n"
+	appLabel         = "io.cattle.field/appId"
+)
 
 // ErrNoObjectsVisited indicates that during a visit operation, no matching objects were found.
 var ErrNoObjectsVisited = goerrors.New("no objects visited")
@@ -100,7 +103,7 @@ type ResourceActorFunc func(*resource.Info) error
 // Create creates Kubernetes resources from an io.reader.
 //
 // Namespace will set the namespace.
-func (c *Client) Create(namespace string, reader io.Reader, timeout int64, shouldWait bool) error {
+func (c *Client) Create(name, namespace string, reader io.Reader, timeout int64, shouldWait bool) error {
 	client, err := c.KubernetesClientSet()
 	if err != nil {
 		return err
@@ -113,6 +116,28 @@ func (c *Client) Create(namespace string, reader io.Reader, timeout int64, shoul
 	if buildErr != nil {
 		return buildErr
 	}
+	for _, info := range infos {
+		// if resource is created under a namespace we have to make sure the namespace matches
+		if info.Namespace != namespace && info.Namespace != "" {
+			return fmt.Errorf("resource's namespace %s doesn't match the current namespace %s", info.Namespace, namespace)
+		}
+		if name != "" {
+			raw := info.Object.(runtime.Unstructured).UnstructuredContent()
+			label, ok := GetValue(raw, "metadata", "labels")
+			if ok {
+				if v, ok := label.(map[string]interface{}); ok {
+					v[appLabel] = name
+					PutValue(raw, v, "metadata", "labels")
+				}
+			} else {
+				v := map[string]interface{}{
+					appLabel: name,
+				}
+				PutValue(raw, v, "metadata", "labels")
+			}
+			info.Object.(runtime.Unstructured).SetUnstructuredContent(raw)
+		}
+	}
 	c.Log("creating %d resource(s)", len(infos))
 	if err := perform(infos, createResource); err != nil {
 		return err
@@ -121,6 +146,45 @@ func (c *Client) Create(namespace string, reader io.Reader, timeout int64, shoul
 		return c.waitForResources(time.Duration(timeout)*time.Second, infos)
 	}
 	return nil
+}
+
+func GetValue(data map[string]interface{}, keys ...string) (interface{}, bool) {
+	for i, key := range keys {
+		if i == len(keys)-1 {
+			val, ok := data[key]
+			return val, ok
+		}
+		data, _ = data[key].(map[string]interface{})
+	}
+
+	return nil, false
+}
+
+func PutValue(data map[string]interface{}, val interface{}, keys ...string) {
+	if data == nil {
+		return
+	}
+
+	// This is so ugly
+	for i, key := range keys {
+		if i == len(keys)-1 {
+			data[key] = val
+		} else {
+			newData, ok := data[key]
+			if ok {
+				newMap, ok := newData.(map[string]interface{})
+				if ok {
+					data = newMap
+				} else {
+					return
+				}
+			} else {
+				newMap := map[string]interface{}{}
+				data[key] = newMap
+				data = newMap
+			}
+		}
+	}
 }
 
 func (c *Client) newBuilder(namespace string, reader io.Reader) *resource.Result {
@@ -328,8 +392,8 @@ func (c *Client) Get(namespace string, reader io.Reader) (string, error) {
 // Namespace will set the namespaces.
 //
 // Deprecated: use UpdateWithOptions instead.
-func (c *Client) Update(namespace string, originalReader, targetReader io.Reader, force bool, recreate bool, timeout int64, shouldWait bool) error {
-	return c.UpdateWithOptions(namespace, originalReader, targetReader, UpdateOptions{
+func (c *Client) Update(name, namespace string, originalReader, targetReader io.Reader, force bool, recreate bool, timeout int64, shouldWait bool) error {
+	return c.UpdateWithOptions(name, namespace, originalReader, targetReader, UpdateOptions{
 		Force:      force,
 		Recreate:   recreate,
 		Timeout:    timeout,
@@ -354,7 +418,7 @@ type UpdateOptions struct {
 //
 // Namespace will set the namespaces. UpdateOptions provides additional parameters to control
 // update behavior.
-func (c *Client) UpdateWithOptions(namespace string, originalReader, targetReader io.Reader, opts UpdateOptions) error {
+func (c *Client) UpdateWithOptions(name, namespace string, originalReader, targetReader io.Reader, opts UpdateOptions) error {
 	original, err := c.BuildUnstructured(namespace, originalReader)
 	if err != nil {
 		return fmt.Errorf("failed decoding reader into objects: %s", err)
@@ -382,7 +446,7 @@ func (c *Client) UpdateWithOptions(namespace string, originalReader, targetReade
 			}
 
 			// Since the resource does not exist, create it.
-			if err := createResource(info); err != nil {
+			if err := createResourceWithAppID(info, name); err != nil {
 				return fmt.Errorf("failed to create resource: %s", err)
 			}
 			newlyCreatedResources = append(newlyCreatedResources, info)
@@ -407,7 +471,7 @@ func (c *Client) UpdateWithOptions(namespace string, originalReader, targetReade
 			)
 		}
 
-		if err := updateResource(c, info, originalInfo.Object, opts.Force, opts.Recreate); err != nil {
+		if err := updateResource(name, c, info, originalInfo.Object, opts.Force, opts.Recreate); err != nil {
 			c.Log("error updating the resource %q:\n\t %v", info.Name, err)
 			updateErrors = append(updateErrors, err.Error())
 		}
@@ -651,7 +715,30 @@ func batchPerform(infos Result, fn ResourceActorFunc, errs chan<- error) {
 
 func createResource(info *resource.Info) error {
 	obj, err := resource.NewHelper(info.Client, info.Mapping).Create(info.Namespace, true, info.Object, nil)
-	if err != nil {
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return err
+	}
+	return info.Refresh(obj, true)
+}
+
+func createResourceWithAppID(info *resource.Info, name string) error {
+	// create resource with additional appId label
+	raw := info.Object.(runtime.Unstructured).UnstructuredContent()
+	label, ok := GetValue(raw, "metadata", "labels")
+	if ok {
+		if v, ok := label.(map[string]interface{}); ok {
+			v[appLabel] = name
+			PutValue(raw, v, "metadata", "labels")
+		}
+	} else {
+		v := map[string]interface{}{
+			appLabel: name,
+		}
+		PutValue(raw, v, "metadata", "labels")
+	}
+	info.Object.(runtime.Unstructured).SetUnstructuredContent(raw)
+	obj, err := resource.NewHelper(info.Client, info.Mapping).Create(info.Namespace, true, info.Object, nil)
+	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
 	return info.Refresh(obj, true)
@@ -713,7 +800,7 @@ func createPatch(target *resource.Info, current runtime.Object) ([]byte, types.P
 	}
 }
 
-func updateResource(c *Client, target *resource.Info, currentObj runtime.Object, force bool, recreate bool) error {
+func updateResource(name string, c *Client, target *resource.Info, currentObj runtime.Object, force bool, recreate bool) error {
 	patch, patchType, err := createPatch(target, currentObj)
 	if err != nil {
 		return fmt.Errorf("failed to create patch: %s", err)
@@ -742,7 +829,7 @@ func updateResource(c *Client, target *resource.Info, currentObj runtime.Object,
 				log.Printf("Deleted %s: %q", kind, target.Name)
 
 				// ... and recreate
-				if err := createResource(target); err != nil {
+				if err := createResourceWithAppID(target, name); err != nil {
 					return fmt.Errorf("Failed to recreate resource: %s", err)
 				}
 				log.Printf("Created a new %s called %q\n", kind, target.Name)
