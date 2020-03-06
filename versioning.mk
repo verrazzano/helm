@@ -19,7 +19,7 @@ ifneq ($(BINARY_VERSION),)
 endif
 
 # Clear the "unreleased" string in BuildMetadata
-ifneq ($(GIT_TAG),)
+ifneq ($(BINARY_VERSION),)
 	LDFLAGS += -X k8s.io/helm/pkg/version.BuildMetadata=
 endif
 LDFLAGS += -X k8s.io/helm/pkg/version.GitCommit=${GIT_COMMIT}
