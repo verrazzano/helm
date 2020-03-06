@@ -25,6 +25,7 @@ steps:
     environment:
       PROJECT_NAME: '"kubernetes-helm"'
       TARGETS: linux/amd64 linux/arm64 darwin/amd64
+      VERSION: ${DRONE_TAG}
 
   - name: publish-github-rc
     pull: default
@@ -38,6 +39,7 @@ steps:
         - "bin/*"
         - _dist/linux-amd64/*
         - _dist/linux-arm64/*
+        - _dist/darwin-amd64/*
       prerelease: true
     when:
       instance:
