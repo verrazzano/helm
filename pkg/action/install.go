@@ -72,6 +72,7 @@ type Install struct {
 	ChartPathOptions
 
 	ClientOnly               bool
+	ForceAdopt               bool
 	CreateNamespace          bool
 	DryRun                   bool
 	DisableHooks             bool
@@ -270,7 +271,7 @@ func (i *Install) Run(chrt *chart.Chart, vals map[string]interface{}) (*release.
 	// deleting the release because the manifest will be pointing at that
 	// resource
 	if !i.ClientOnly && !isUpgrade && len(resources) > 0 {
-		toBeAdopted, err = existingResourceConflict(resources, rel.Name, rel.Namespace)
+		toBeAdopted, err = existingResourceConflict(resources, rel.Name, rel.Namespace, i.ForceAdopt)
 		if err != nil {
 			return nil, errors.Wrap(err, "rendered manifests contain a resource that already exists. Unable to continue with install")
 		}
