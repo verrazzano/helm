@@ -1,6 +1,6 @@
 DOCKER_REGISTRY   ?= gcr.io
 IMAGE_PREFIX      ?= kubernetes-helm
-DEV_IMAGE         ?= golang:1.13.3
+DEV_IMAGE         ?= golang:1.14
 SHORT_NAME        ?= tiller
 SHORT_NAME_RUDDER ?= rudder
 TARGETS           ?= darwin/amd64 linux/amd64 linux/386 linux/arm linux/arm64 linux/ppc64le linux/s390x windows/amd64
@@ -8,7 +8,7 @@ TARGET_OBJS       ?= darwin-amd64.tar.gz darwin-amd64.tar.gz.sha256 linux-amd64.
 DIST_DIRS         = find * -type d -exec
 
 # go option
-GO        ?= go
+GO        ?= GO111MODULE=off go
 PKG       := $(shell glide novendor)
 TAGS      :=
 TESTS     := .
