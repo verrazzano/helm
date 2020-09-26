@@ -18,7 +18,7 @@ PKG        := ./...
 TAGS       :=
 TESTS      := .
 TESTFLAGS  :=
-LDFLAGS    := -w -s
+LDFLAGS    := -w -s -extldflags "-static"
 GOFLAGS    :=
 SRC        := $(shell find . -type f -name '*.go' -print)
 
@@ -60,7 +60,7 @@ all: build
 build: $(BINDIR)/$(BINNAME)
 
 $(BINDIR)/$(BINNAME): $(SRC)
-	GO111MODULE=on go build $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' -o '$(BINDIR)'/$(BINNAME) ./cmd/helm
+	GO111MODULE=on CGO_ENABLED=0 go build $(GOFLAGS) -tags '$(TAGS)' -ldflags '$(LDFLAGS)' -o '$(BINDIR)'/$(BINNAME) ./cmd/helm
 
 # ------------------------------------------------------------------------------
 #  test
