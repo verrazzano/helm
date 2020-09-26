@@ -19,7 +19,6 @@ limitations under the License.
 package main
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -43,18 +42,5 @@ func checkPerms(out io.Writer) {
 			return
 		}
 		kc = filepath.Join(u.HomeDir, ".kube", "config")
-	}
-	fi, err := os.Stat(kc)
-	if err != nil {
-		// DO NOT error if no KubeConfig is found. Not all commands require one.
-		return
-	}
-
-	perm := fi.Mode().Perm()
-	if perm&0040 > 0 {
-		fmt.Fprintf(out, "WARNING: Kubernetes configuration file is group-readable. This is insecure. Location: %s\n", kc)
-	}
-	if perm&0004 > 0 {
-		fmt.Fprintf(out, "WARNING: Kubernetes configuration file is world-readable. This is insecure. Location: %s\n", kc)
 	}
 }
