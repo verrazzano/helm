@@ -120,7 +120,9 @@ func (c *Client) Wait(resources ResourceList, timeout time.Duration) error {
 	}
 	w := waiter{
 		c:       cs,
-		log:     c.Log,
+		log: func(s string, i ...interface{}) {
+			fmt.Printf(s+"\n", i...)
+		},
 		timeout: timeout,
 	}
 	return w.waitForResources(resources)
