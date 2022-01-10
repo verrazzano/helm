@@ -15,16 +15,20 @@ steps:
     pull: default
     image: golang:1.12.9
     commands:
+      # Fix the certificate errors https://stackoverflow.com/questions/69420529/app-engine-deploy-failing-with-fatal-unable-to-access-https-gopkg-in-yaml-v
+      - apt update && apt install ca-certificates libgnutls30 -y
       - ./.circleci/bootstrap.sh
       - make test-unit
       - make build-cross
       - mv ./_dist/linux-arm64/rancher-helm ./_dist/linux-arm64/rancher-helm-arm64
       - mv ./_dist/linux-arm64/rancher-tiller ./_dist/linux-arm64/rancher-tiller-arm64
+      - mv ./_dist/linux-s390x/rancher-helm ./_dist/linux-s390x/rancher-helm-s390x
+      - mv ./_dist/linux-s390x/rancher-tiller ./_dist/linux-s390x/rancher-tiller-s390x
       - mv ./_dist/darwin-amd64/rancher-helm ./_dist/darwin-amd64/rancher-helm-darwin-amd64
       - mv ./_dist/darwin-amd64/rancher-tiller ./_dist/darwin-amd64/rancher-tiller-darwin-amd64
     environment:
       PROJECT_NAME: '"kubernetes-helm"'
-      TARGETS: linux/amd64 linux/arm64 darwin/amd64
+      TARGETS: linux/amd64 linux/arm64 linux/s390x darwin/amd64
       VERSION: ${DRONE_TAG}
 
   - name: publish-github-rc
@@ -39,6 +43,7 @@ steps:
         - "bin/*"
         - _dist/linux-amd64/*
         - _dist/linux-arm64/*
+        -  dist/linux-s390x/*
         - _dist/darwin-amd64/*
       prerelease: true
     when:
@@ -60,6 +65,7 @@ steps:
         - "bin/*"
         - _dist/linux-amd64/*
         - _dist/linux-arm64/*
+        - _dist/linux-s390x/*
         - _dist/darwin-amd64/*
       api_key:
         from_secret: github_token
