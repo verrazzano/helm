@@ -39,7 +39,7 @@ func TestInitialize(t *testing.T) {
 	settings := helm_env.EnvSettings{
 		Home: hh,
 	}
-	stableRepositoryURL := "https://kubernetes-charts.storage.googleapis.com"
+	stableRepositoryURL := "https://charts.helm.sh/stable"
 	localRepositoryURL := "http://127.0.0.1:8879/charts"
 
 	if err := Initialize(hh, b, false, settings, stableRepositoryURL, localRepositoryURL); err != nil {
@@ -81,7 +81,7 @@ func TestEnsureHome(t *testing.T) {
 	settings := helm_env.EnvSettings{
 		Home: hh,
 	}
-	stableRepositoryURL := "https://kubernetes-charts.storage.googleapis.com"
+	stableRepositoryURL := "https://charts.helm.sh/stable"
 	localRepositoryURL := "http://127.0.0.1:8879/charts"
 
 	if err := ensureDirectories(hh, b); err != nil {
